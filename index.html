@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Otimizador de Despensa - Chef IA</title>
+    <!-- Carregando Tailwind CSS para um design moderno e responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Define a fonte Inter como padrão */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7fafc; /* Cor de fundo leve */
+        }
+        /* Estilos personalizados para o card principal */
+        .main-card {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            max-width: 90%;
+            margin: 2rem auto;
+            background-color: white;
+        }
+        /* Estilização para o botão de pesquisa */
+        .search-button {
+            transition: all 0.3s ease;
+            background-image: linear-gradient(to right, #10b981, #059669);
+        }
+        .search-button:hover {
+            background-image: linear-gradient(to right, #059669, #10b981);
+            transform: translateY(-1px);
+        }
+        /* Estilização para a área de resultado, usando cores neutras para o fundo */
+        #resultado-container {
+            min-height: 200px;
+            background-color: #f9f9f9;
+        }
+        /* Estilo para links de citação */
+        .citation-link {
+            color: #059669; /* Cor verde para links */
+            text-decoration: underline;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="min-h-screen flex items-start justify-center p-4">
+        
+        <!-- Card Principal da Aplicação: w-full no mobile, mas restrito a 60% (lg:w-3/5) e 50% (xl:w-1/2) no desktop para melhor leitura. -->
+        <div class="main-card w-full lg:w-3/5 xl:w-1/2 rounded-xl p-6 md:p-10">
+            <header class="text-center mb-8">
+                <h1 class="text-3xl md:text-4xl font-extrabold text-gray-800">
+                    Otimizador de Despensa 🧑‍🍳✨
+                </h1>
+                <p class="mt-2 text-lg text-gray-500">
+                    Seu Chef IA: Diga o que você tem, e ele cria a receita perfeita.
+                </p>
+            </header>
+
+            <!-- Formulário de Entrada -->
+            <div class="space-y-6">
+                
+                <!-- 1. Ingredientes -->
+                <div>
+                    <label for="ingredientes" class="block text-sm font-medium text-gray-700 mb-1">
+                        Ingredientes que você possui (ex: frango, brócolis, arroz)
+                    </label>
+                    <textarea id="ingredientes" rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 transition duration-150" placeholder="Separe por vírgulas ou linhas."></textarea>
+                </div>
+
+                <!-- 2. Restrições/Preferências -->
+                <div>
+                    <label for="restricoes" class="block text-sm font-medium text-gray-700 mb-1">
+                        Restrições, Tempo ou Humor (ex: Low Carb, Jantar Rápido, Confort food)
+                    </label>
+                    <input type="text" id="restricoes" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 transition duration-150" placeholder="Ex: 30 minutos, vegetariano, sem glúten">
+                </div>
+
+                <!-- Botão de Busca -->
+                <button id="search-button" onclick="iniciarBusca()" class="search-button w-full text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-emerald-500 focus:ring-opacity-50">
+                    Gerar Receita Otimizada
+                </button>
+
+                <!-- Área de Mensagem (Carregamento/Erros) -->
+                <div id="mensagem-status" class="hidden p-3 text-center text-sm rounded-lg bg-yellow-100 text-yellow-700">
+                    Buscando criatividade na cozinha...
+                </div>
+            </div>
+
+            <!-- Área de Resultado -->
+            <div class="mt-8 border-t border-gray-200 pt-6">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Resultado do Chef IA</h2>
+                <div id="resultado-container" class="p-4 md:p-6 rounded-lg text-gray-800 whitespace-pre-wrap">
+                    <p class="text-gray-500 italic">As receitas geradas pelo Gemini aparecerão aqui. Use a ferramenta para descobrir o potencial da sua despensa!</p>
+                </div>
+                <!-- Área de Citações -->
+                <div id="citacoes-container" class="mt-4 text-sm text-gray-600 border-t pt-3 hidden">
+                    <h3 class="font-semibold mb-2">Fontes Utilizadas:</h3>
+                    <ul id="citacoes-lista" class="list-disc list-inside space-y-1"></ul>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script type="module">
+        // Importações e configurações de variáveis globais do Canvas
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const apiKey = ""; // Chave da API, preenchida automaticamente pelo ambiente Canvas
+
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+        const resultadoContainer = document.getElementById('resultado-container');
+        const statusMensagem = document.getElementById('mensagem-status');
+        const searchButton = document.getElementById('search-button');
+        const citacoesLista = document.getElementById('citacoes-lista');
+        const citacoesContainer = document.getElementById('citacoes-container');
+
+        /**
+         * Converte texto Markdown simples em HTML básico para exibição.
+         * @param {string} markdownText - O texto de saída do Gemini em formato Markdown.
+         * @returns {string} O HTML formatado.
+         */
+        function parseMarkdownToHtml(markdownText) {
+            let html = markdownText
+                .replace(/^## (.*$)/gim, '<h2>$1</h2>') // Títulos H2
+                .replace(/^### (.*$)/gim, '<h3>$1</h3>') // Títulos H3
+                .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>') // Negrito
+                .replace(/^\* (.*$)/gim, '<li>$1</li>') // Listas
+                .replace(/^(<li>.*<\/li>)$/gms, '<ul>$1</ul>') // Envolve a lista
+                .replace(/\n/g, '<br>'); // Novas linhas
+
+            // Limpeza de tags de lista duplicadas que podem surgir
+            html = html.replace(/<\/ul><br><ul>/g, '').replace(/<\/ul><ul>/g, '');
+            return html;
+        }
+
+
+        /**
+         * Função principal para iniciar a busca e interagir com a API do Gemini.
+         */
+        window.iniciarBusca = async function() {
+            const ingredientes = document.getElementById('ingredientes').value.trim();
+            const restricoes = document.getElementById('restricoes').value.trim();
+
+            if (!ingredientes) {
+                resultadoContainer.innerHTML = '<p class="text-red-500 font-semibold">Por favor, liste pelo menos alguns ingredientes que você possui.</p>';
+                return;
+            }
+
+            // 1. Configurar UI para estado de carregamento
+            resultadoContainer.innerHTML = '<p class="text-gray-500 italic">O Chef IA está criando sua obra-prima...</p>';
+            statusMensagem.textContent = 'Buscando criatividade na cozinha... Por favor, aguarde.';
+            statusMensagem.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-green-100', 'text-green-700');
+            statusMensagem.classList.add('bg-yellow-100', 'text-yellow-700');
+            searchButton.disabled = true;
+            searchButton.textContent = 'Gerando Receita...';
+            citacoesContainer.classList.add('hidden');
+            citacoesLista.innerHTML = '';
+
+            // 2. Definir Prompts
+            const systemPrompt = `Você é um Chef de Cozinha altamente criativo e experiente, focado em otimizar ingredientes. Sua missão é transformar a lista de ingredientes e restrições fornecidas pelo usuário em uma receita completa, original e deliciosa. 
+            A receita deve ser formatada estritamente em Markdown. Use títulos H2 e H3. Inclua a lista de ingredientes, instruções passo a passo e dicas de substituição/variações.
+            O tom deve ser entusiasta e profissional.`;
+            
+            const userQuery = `Eu tenho os seguintes ingredientes: ${ingredientes}. 
+            Minhas restrições/preferências são: ${restricoes}. 
+            Crie uma receita completa, original e que use o máximo desses ingredientes.`;
+
+
+            // 3. Montar o Payload da API
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                // Habilitar Google Search Grounding para obter informações atualizadas e técnicas de culinária
+                tools: [{ "google_search": {} }], 
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            const maxRetries = 3;
+            let lastError = null;
+
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                let delay = Math.pow(2, attempt) * 1000; // Backoff exponencial (1s, 2s, 4s)
+                if (attempt > 0) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Erro HTTP: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const candidate = result.candidates?.[0];
+
+                    if (candidate && candidate.content?.parts?.[0]?.text) {
+                        
+                        // 4. Extrair Texto e Fontes
+                        const text = candidate.content.parts[0].text;
+                        const formattedHtml = parseMarkdownToHtml(text);
+                        resultadoContainer.innerHTML = formattedHtml;
+
+                        let sources = [];
+                        const groundingMetadata = candidate.groundingMetadata;
+                        
+                        // Processar citações se o Grounding foi usado
+                        if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                            sources = groundingMetadata.groundingAttributions
+                                .map(attribution => ({
+                                    uri: attribution.web?.uri,
+                                    title: attribution.web?.title,
+                                }))
+                                .filter(source => source.uri && source.title); 
+
+                            if (sources.length > 0) {
+                                sources.forEach((source, index) => {
+                                    const li = document.createElement('li');
+                                    li.innerHTML = `<a href="${source.uri}" target="_blank" class="citation-link" title="${source.title}">
+                                        ${source.title}
+                                    </a>`;
+                                    citacoesLista.appendChild(li);
+                                });
+                                citacoesContainer.classList.remove('hidden');
+                            }
+                        }
+
+                        // 5. Finalizar UI (Sucesso)
+                        statusMensagem.textContent = 'Receita Gerada com Sucesso!';
+                        statusMensagem.classList.remove('bg-yellow-100', 'text-yellow-700');
+                        statusMensagem.classList.add('bg-green-100', 'text-green-700');
+                        return; // Sair do loop de retries
+                    } else {
+                         // Se a resposta estiver vazia ou malformada
+                        throw new Error('Resposta do Gemini vazia ou incompleta.');
+                    }
+
+                } catch (error) {
+                    console.error(`Tentativa ${attempt + 1} falhou:`, error);
+                    lastError = error;
+                    if (attempt === maxRetries - 1) {
+                         // 6. Finalizar UI (Erro)
+                        resultadoContainer.innerHTML = `<p class="text-red-500 font-semibold">Erro ao gerar a receita após ${maxRetries} tentativas. Tente novamente ou simplifique o pedido.</p>`;
+                        statusMensagem.textContent = `Falha: ${lastError.message}`;
+                        statusMensagem.classList.remove('bg-yellow-100', 'text-yellow-700');
+                        statusMensagem.classList.add('bg-red-100', 'text-red-700');
+                    }
+                }
+            }
+
+            // 7. Resetar o botão e remover a mensagem de status se deu erro
+            searchButton.disabled = false;
+            searchButton.textContent = 'Gerar Receita Otimizada';
+            if (!lastError) {
+                // Se a execução foi bem-sucedida, esconder a mensagem de status após um tempo
+                setTimeout(() => statusMensagem.classList.add('hidden'), 5000);
+            }
+        }
+    </script>
+</body>
+</html>
+
+                  
